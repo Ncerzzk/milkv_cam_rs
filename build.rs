@@ -14,6 +14,9 @@ fn main() {
     println!("cargo:rustc-link-lib=static=ae");
     println!("cargo:rustc-link-lib=static=awb");
     println!("cargo:rustc-link-lib=static=af");
+    println!("cargo:rustc-link-lib=static=venc");
+    println!("cargo:rustc-link-lib=static=cvi_bin");
+    println!("cargo:rustc-link-lib=static=cvi_bin_isp");
     println!("cargo:rustc-link-lib=static=isp_algo");
 
     println!("successfully set link flag!");

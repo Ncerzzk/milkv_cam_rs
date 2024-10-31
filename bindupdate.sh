@@ -7,7 +7,7 @@ function gen(){
     header=$1
     outputrs=$2
     bindgen $include_path/$header -o $outputrs    --no-doc-comments   -- -I$include_path -I$include_path2 -DARCH_CV180X
-    sed -i '1i#![allow(dead_code, non_snake_case, non_camel_case_types, non_upper_case_globals, unused_imports)]'  $outputrs
+    sed -i '1i#![allow(dead_code, non_snake_case, non_camel_case_types, non_upper_case_globals, unused_imports, improper_ctypes)]'  $outputrs
 }
 
 #bindgen $include_path/cvi_vi.h -o cvi_vi.rs    --no-doc-comments   -- -I$include_path
@@ -18,6 +18,7 @@ gen cvi_venc.h cvi_venc.rs
 gen cvi_sys.h cvi_sys.rs
 gen cvi_sns_ctrl.h cvi_sns_ctrl.rs
 gen cvi_vb.h cvi_vb.rs
+gen cvi_bin.h cvi_bin.rs
 gen isp/cv180x/cvi_isp.h cvi_isp.rs
 gen isp/cv180x/cvi_ae.h cvi_ae.rs
 gen isp/cv180x/cvi_awb.h cvi_awb.rs
