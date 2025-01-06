@@ -5,3 +5,8 @@ edition = "2021"
 
 [dependencies]
 libloading = "0.8.5"
+mpu6050 = { path = "../mpu6050"}
+embedded-hal = "0.2.4"
+i2cdev = "0.5.1"
+linux-embedded-hal = "0.3.2"
+ctrlc = "3.4.5"

@@ -8,9 +8,10 @@ mod cvi_ae;
 mod cvi_awb;
 mod cvi_bin;
 mod cvi_venc;
+mod sensor;
 
 use cvi_vb::VB_POOL_CONFIG_S;
-use std::{os::raw::c_void, io::{Read, Write}, ptr::null_mut, mem::ManuallyDrop,sync::LazyLock};
+use std::{os::raw::c_void, io::{Read, Write}, ptr::null_mut, mem::ManuallyDrop,sync::{LazyLock, atomic::AtomicBool}};
 
 use crate::{
     cvi_isp::{CVI_MIPI_SetMipiReset, CVI_MIPI_SetSensorReset, CVI_MIPI_SetMipiAttr, CVI_MIPI_SetSensorClock, CVI_ISP_SetBindAttr, CVI_ISP_MemInit, ISP_PUB_ATTR_S, },
@@ -614,13 +615,6 @@ unsafe fn vi_venc_init(){
     err_check!(cvi_sys::CVI_SYS_Bind(&src_chn as *const cvi_sys::MMF_CHN_S, &dst_chn as *const cvi_sys::MMF_CHN_S));
 
 
-    let recv_param = cvi_venc::VENC_RECV_PIC_PARAM_S{
-        s32RecvPicNum:-1,
-    };
-
-    err_check!(cvi_venc::CVI_VENC_StartRecvFrame(0, &recv_param as *const cvi_venc::VENC_RECV_PIC_PARAM_S));
-
-
 }
 
 unsafe fn vi_venc_deinit(){
@@ -662,15 +656,23 @@ unsafe fn vi_venc_deinit(){
 }
 
 
+fn create_mp4_file()->std::fs::File{
+    let f = std::fs::File::options().create(true).write(true).open("milkv_out.mp4").unwrap();
+    f
+}
+
+static STOP:AtomicBool = AtomicBool::new(false);
+static START_RECV_FRAME:AtomicBool = AtomicBool::new(false);
 
 fn main() {
-    unsafe {
-        
-        let mut i2cdevice2 = linux_embedded_hal::i2cdev::linux::LinuxI2CDevice::new("/dev/i2c-0",0x68).unwrap();
-        let mut d = linux_embedded_hal::Delay{};
-        let mut i2cdevice2 = linux_embedded_hal::I2cdev::new("").unwrap();
+    ctrlc::set_handler(||{
+        STOP.store(true, std::sync::atomic::Ordering::Release);
+        println!("prepare exit!");
+    });
+    
+    sensor::sensor_init();
 
-        embedded_sensors::mpu6500::Mpu6500::new(0x68, &mut d, &mut i2cdevice2);
+    unsafe {
         vi_venc_init();
         let mut venc_chn_status = cvi_venc::VENC_CHN_STATUS_S{
             u32LeftPics: 0,
@@ -697,6 +699,15 @@ fn main() {
             },
         };
 
+
+        let mut f = create_mp4_file();
+
+        let recv_param = cvi_venc::VENC_RECV_PIC_PARAM_S{
+            s32RecvPicNum:-1,
+        };
+    
+        err_check!(cvi_venc::CVI_VENC_StartRecvFrame(0, &recv_param as *const cvi_venc::VENC_RECV_PIC_PARAM_S));
+        START_RECV_FRAME.store(true, std::sync::atomic::Ordering::SeqCst);
         loop{
             err_check!(cvi_venc::CVI_VENC_QueryStatus(0, &mut venc_chn_status as *mut cvi_venc::VENC_CHN_STATUS_S));
             if venc_chn_status.u32CurPacks != 0{
@@ -751,12 +762,14 @@ fn main() {
         stream.pstPack = area.as_mut_ptr();
 
 
-        let mut f = std::fs::File::options().create(true).write(true).open("milkv_out.h265").unwrap();
-
         println!("curPacks:{}",venc_chn_status.u32CurPacks);
         let mut cnt = 0;
         loop{
-            if cvi_venc::CVI_VENC_GetStream(0, &mut stream as *mut cvi_venc::VENC_STREAM_S, 2000) !=0 || cnt >=100{
+            // if cvi_venc::CVI_VENC_GetStream(0, &mut stream as *mut cvi_venc::VENC_STREAM_S, 2000) !=0 || cnt >=100{
+            //     break;
+            // }
+            if cvi_venc::CVI_VENC_GetStream(0, &mut stream as *mut cvi_venc::VENC_STREAM_S, 2000) !=0  
+                || STOP.load(std::sync::atomic::Ordering::SeqCst){
                 break;
             }
             println!("curPackCount:{} cnt:{}",stream.u32PackCount,cnt);
@@ -769,7 +782,7 @@ fn main() {
             err_check!(cvi_venc::CVI_VENC_ReleaseStream(0,&mut stream as *mut cvi_venc::VENC_STREAM_S));
 
         }
-
+        f.flush();
         std::mem::ManuallyDrop::drop(&mut area);
 
         vi_venc_deinit();
