@@ -10,3 +10,4 @@ embedded-hal = "0.2.4"
 i2cdev = "0.5.1"
 linux-embedded-hal = "0.3.2"
 ctrlc = "3.4.5"
+clap = { version = "4.5.26", features = ["derive"] }

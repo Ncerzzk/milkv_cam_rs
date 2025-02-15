@@ -10,6 +10,7 @@ mod cvi_bin;
 mod cvi_venc;
 mod sensor;
 
+use clap::Parser;
 use cvi_vb::VB_POOL_CONFIG_S;
 use std::{os::raw::c_void, io::{Read, Write}, ptr::null_mut, mem::ManuallyDrop,sync::{LazyLock, atomic::AtomicBool}};
 
@@ -449,7 +450,7 @@ unsafe fn vi_venc_init(){
     isp_static_cfg.stAECfg.stCrop[0].u16W = 1920;
     isp_static_cfg.stAECfg.stCrop[0].u16H = 1080;        
 
-    std::ptr::write_bytes(isp_static_cfg.stAECfg.au8Weight.as_mut_ptr(), 1, size_of_val(&isp_static_cfg.stAECfg.au8Weight));
+    std::ptr::write_bytes(isp_static_cfg.stAECfg.au8Weight.as_mut_ptr() as *mut u8, 1, size_of_val(&isp_static_cfg.stAECfg.au8Weight));
 
     isp_static_cfg.stWBCfg.u16ZoneRow = cvi_isp::AWB_ZONE_ORIG_ROW as u16;
     isp_static_cfg.stWBCfg.u16ZoneCol = cvi_isp::AWB_ZONE_ORIG_COLUMN as u16;
@@ -656,21 +657,36 @@ unsafe fn vi_venc_deinit(){
 }
 
 
-fn create_mp4_file()->std::fs::File{
-    let f = std::fs::File::options().create(true).write(true).open("milkv_out.mp4").unwrap();
+fn create_mp4_file(filename:&str)->std::fs::File{
+    let f = std::fs::File::options().create(true).write(true).truncate(true).open(filename).unwrap();
     f
 }
 
 static STOP:AtomicBool = AtomicBool::new(false);
 static START_RECV_FRAME:AtomicBool = AtomicBool::new(false);
 
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None, arg_required_else_help(true))]
+struct Cli{
+
+    #[arg(short,long)]
+    filename:String,
+
+    #[arg(short,long)]
+    dev:String,
+}
+
+
 fn main() {
     ctrlc::set_handler(||{
         STOP.store(true, std::sync::atomic::Ordering::Release);
         println!("prepare exit!");
-    });
+    }).unwrap();
+
+    let cli = Cli::parse();
     
-    sensor::sensor_init();
+    sensor::sensor_init(&cli.dev, &(cli.filename.clone() + ".gcsv"));
 
     unsafe {
         vi_venc_init();
@@ -700,7 +716,7 @@ fn main() {
         };
 
 
-        let mut f = create_mp4_file();
+        let mut f = create_mp4_file(&(cli.filename.clone() + ".mp4"));
 
         let recv_param = cvi_venc::VENC_RECV_PIC_PARAM_S{
             s32RecvPicNum:-1,
@@ -772,17 +788,17 @@ fn main() {
                 || STOP.load(std::sync::atomic::Ordering::SeqCst){
                 break;
             }
-            println!("curPackCount:{} cnt:{}",stream.u32PackCount,cnt);
+            //println!("curPackCount:{} cnt:{}",stream.u32PackCount,cnt);
             for j in 0..stream.u32PackCount{
                 let pack  =  *(stream.pstPack.wrapping_add(j as usize));
                 f.write(std::slice::from_raw_parts(pack.pu8Addr.wrapping_add(pack.u32Offset as usize), 
-                    (pack.u32Len - pack.u32Offset) as usize)).unwrap();
+                  (pack.u32Len - pack.u32Offset) as usize)).unwrap();
                 cnt +=1;
             }
             err_check!(cvi_venc::CVI_VENC_ReleaseStream(0,&mut stream as *mut cvi_venc::VENC_STREAM_S));
 
         }
-        f.flush();
+        f.flush().unwrap();
         std::mem::ManuallyDrop::drop(&mut area);
 
         vi_venc_deinit();
